@@ -69,7 +69,12 @@ var reqIP = function(req){
 morgan.token('ip', function(req, res){
 	return reqIP(req);
 });
-var logFormat = 'path=:url status=:status ip=:ip resp-ms=:response-time'
+morgan.token('shorter-response-time', function getResponseTimeToken(req, res) {
+  if (!req._startAt || !res._startAt) return;
+  var ms = (res._startAt[0] - req._startAt[0]) * 1e3 + (res._startAt[1] - req._startAt[1]) * 1e-6;
+  return ms.toFixed(0); // By default, morgan uses 3, but I don't need that much accuracy :)
+});
+var logFormat = 'path=:url status=:status ip=:ip resp-ms=:shorter-response-time'
 	+ (log_referer ? ' referer=:referrer' : '')
 	+ (log_useragent ? ' ua=:user-agent' : '');
 app.use(morgan(logFormat, {
@@ -144,7 +149,7 @@ app.use(function(req, res, next){
 	var timeout = setTimeout(function(){
 		winston.error('Server timeout: ' + req.url);
 		res.status(504).end();
-	}, 25000);
+	}, 29000);
 	onHeaders(res, function(){
 		clearTimeout(timeout);
 	});
@@ -347,11 +352,14 @@ app.get(/^\/item\/(\d+)$/, function(req, res){
 		if (result){
 			res.jsonp(result);
 		} else {
+			var start = Date.now();
 			hnapi.item(postID, function(err, data){
 				if (err){
 					errorRespond(res, err);
 					return;
 				}
+				var time = Date.now() - start;
+				if (time > 25000) winston.info('Fetch duration for #' + postID + ': ' + time + 'ms');
 				cache.set(cacheKey, data, CACHE_EXP);
 				res.jsonp(data);
 			});
